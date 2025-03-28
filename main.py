@@ -52,6 +52,28 @@ level_passed = False
 level_pass_time = 0
 LEVEL_PASS_DURATION = 2  # Duration to show level passed message
 
+def check_qix_collision():
+    """Check if player collides with Qix"""
+    global lives, current_state, invulnerable
+    
+    # Check if currently invulnerable
+    if invulnerable:
+        return False
+
+    # Create rects for player and Qix
+    player_rect = pygame.Rect(xpos, ypos, width, height)
+    qix_rect = pygame.Rect(qix['x'] - 14, qix['y'] - 14, 28, 28)
+    
+    # Check if player is pushing a line
+    if push_enabled:
+        # Additional check to see if line is inside Qix area
+        if player_rect.colliderect(qix_rect):
+            lives -= 1
+            current_state = GAME_STATES['END_GAME']
+            return True
+    
+    return False
+
 def calculate_polygon_area(polygon):
     """Calculate the area of a polygon using the shoelace formula"""
     n = len(polygon)
@@ -376,7 +398,8 @@ while running:
                 if event.key == pygame.K_RETURN:
                     reset_game()
                 elif event.key == pygame.K_ESCAPE:
-                    running = False
+                    current_state = GAME_STATES['INSTRUCTIONS']
+                    menu_selection = 0  # Reset menu selection to first item
 
     # State-based rendering
     if current_state == GAME_STATES['INSTRUCTIONS'] or current_state == GAME_STATES['INSTRUCTIONS_DETAIL']:
@@ -386,11 +409,6 @@ while running:
         draw_pause_menu()
     
     elif current_state == GAME_STATES['PLAY']:
-        # Game over check
-        if lives <= 0:
-            current_state = GAME_STATES['END_GAME']
-            continue
-
         # Level passed check - return to instructions after showing message
         if level_passed and time.time() - level_pass_time >= LEVEL_PASS_DURATION:
             current_state = GAME_STATES['INSTRUCTIONS']
@@ -455,7 +473,7 @@ while running:
             text_width = level_pass_text.get_width()
             screen.blit(level_pass_text, (screen_width // 2 - text_width // 2, screen_height // 2 - 50))
         
-        # Movement and game logic for player and enemies (same as before)
+        # Movement and game logic for player and enemies
         keys = pygame.key.get_pressed()
         if push_enabled:
             # Prevent diagonal movement by prioritizing one direction
@@ -507,6 +525,9 @@ while running:
         
         # Check Sparx collision
         check_sparx_collision()
+        
+        # Check Qix collision
+        check_qix_collision()
         
         # Update Qix movement
         qix['x'] += qix['dx']
