@@ -18,7 +18,8 @@ GAME_STATES = {
     'INSTRUCTIONS_DETAIL': 3,
     'PLAY': 1,
     'END_GAME': 2,
-    'PAUSE': 4  # New pause state
+    'PAUSE': 4,
+    'WIN_GAME': 5,  # New pause state
 }
 current_state = GAME_STATES['INSTRUCTIONS']
 
@@ -65,13 +66,43 @@ def check_qix_collision():
     qix_rect = pygame.Rect(qix['x'] - 14, qix['y'] - 14, 28, 28)
     
     # Check if player is pushing a line
-    if push_enabled:
-        # Additional check to see if line is inside Qix area
-        if player_rect.colliderect(qix_rect):
-            lives -= 1
+    if push_enabled and player_rect.colliderect(qix_rect):
+        lives -= 1
+        if lives <= 0:
             current_state = GAME_STATES['END_GAME']
-            return True
+        return True
     
+    return False
+
+def check_sparx_collision():
+    """Check if player collides with Sparx or if Sparx touches the green line."""
+    global lives, invulnerable, push_enabled
+
+    if invulnerable:
+        if time.time() - invulnerability_start_time > INVULNERABILITY_DURATION:
+            invulnerable = False
+        return False
+
+    player_rect = pygame.Rect(xpos, ypos, width, height)
+    for s in sparx:
+        sparx_rect = pygame.Rect(s['x'] - 7, s['y'] - 7, 14, 14)
+        
+        if player_rect.colliderect(sparx_rect):
+            lives -= 1
+            if lives <= 0:
+                current_state = GAME_STATES['END_GAME']
+            reset_player_position()
+            return True
+
+        if push_enabled and len(player_path) > 1:
+            for i in range(len(player_path) - 1):
+                if line_intersects_circle(player_path[i], player_path[i + 1], (s['x'], s['y']), 7):
+                    lives -= 1
+                    if lives <= 0:
+                        current_state = GAME_STATES['END_GAME']
+                    reset_player_position()
+                    return True
+
     return False
 
 def calculate_polygon_area(polygon):
@@ -87,7 +118,7 @@ def calculate_polygon_area(polygon):
 
 def calculate_territory_percentage():
     """Calculate the percentage of territory covered"""
-    global total_area, covered_area, level_passed, level_pass_time
+    global total_area, covered_area, level_passed, level_pass_time, current_state
     
     # Calculate total game area (excluding border)
     if total_area == 0:
@@ -103,6 +134,7 @@ def calculate_territory_percentage():
     if percentage >= 20 and not level_passed:
         level_passed = True
         level_pass_time = time.time()
+        current_state = GAME_STATES['WIN_GAME']  # Transition to win state
     
     return percentage
 
@@ -156,9 +188,9 @@ def reset_player_position():
     invulnerability_start_time = time.time()
 
 def check_sparx_collision():
-    """Check if player collides with Sparx"""
-    global lives, invulnerable
-    
+    """Check if player collides with Sparx or if Sparx touches the green line."""
+    global lives, invulnerable, push_enabled
+
     # Check if currently invulnerable
     if invulnerable:
         if time.time() - invulnerability_start_time > INVULNERABILITY_DURATION:
@@ -168,12 +200,21 @@ def check_sparx_collision():
     player_rect = pygame.Rect(xpos, ypos, width, height)
     for s in sparx:
         sparx_rect = pygame.Rect(s['x'] - 7, s['y'] - 7, 14, 14)
+        
+        # Check if Sparx collides with the player
         if player_rect.colliderect(sparx_rect):
-            # If player is pushing and Sparx is touching the green line, lose a life
-            if push_enabled and check_sparx_line_collision():
-                lives -= 1
-                reset_player_position()
-                return True
+            lives -= 1
+            reset_player_position()
+            return True
+
+        # Check if Sparx touches the green line while pushing
+        if push_enabled and len(player_path) > 1:
+            for i in range(len(player_path) - 1):
+                if line_intersects_circle(player_path[i], player_path[i + 1], (s['x'], s['y']), 7):
+                    lives -= 1
+                    reset_player_position()
+                    return True
+
     return False
 
 def check_sparx_line_collision():
@@ -226,26 +267,21 @@ def draw_instructions():
         # Detailed instructions
         instructions = [
             "Objective: Cover at least 20% of the screen",
-            "",
-            "Controls:",
+            "1) Controls:",
             "- Arrow Keys: Move around the border or when not pushing",
             "- Spacebar: Start/Stop pushing to draw lines",
             "- ESC: Pause Game",
-            "",
-            "Gameplay:",
+            "2) Gameplay:",
             "- Move along the border to start pushing",
             "- Create territories by drawing closed paths",
             "- Avoid Sparx (orange circles) and Qix (purple circle)",
             "- Don't get caught while pushing!",
-            "",
-            "Enemies:",
+            "3) Enemies:",
             "- Sparx: Patrol the border",
             "- Qix: Moves freely inside the play area",
-            "",
-            "Tips:",
+            "4) Tips:",
             "- Be strategic in your territory claims",
             "- Watch out for enemy movements",
-            "",
             "Press ESC to Return to Menu"
         ]
         
@@ -320,6 +356,25 @@ def reset_game():
     
     current_state = GAME_STATES['PLAY']
 
+def draw_congrats_screen():
+    """Draw the congrats screen when the player wins"""
+    screen.fill("white")
+    
+    # Congrats Title
+    congrats_text = title_font.render("CONGRATULATIONS!", True, (0, 255, 0))
+    screen.blit(congrats_text, (screen_width // 2 - congrats_text.get_width() // 2, 200))
+    
+    # Percentage covered
+    percentage = calculate_territory_percentage()
+    covered_text = font.render(f"Territory Covered: {percentage:.2f}%", True, (0, 0, 0))
+    screen.blit(covered_text, (screen_width // 2 - covered_text.get_width() // 2, 250))
+    
+    # Instructions
+    restart_text = font.render("Press ENTER to Restart", True, (0, 0, 0))
+    quit_text = font.render("Press ESC to Return to Main Menu", True, (0, 0, 0))
+    screen.blit(restart_text, (screen_width // 2 - restart_text.get_width() // 2, 300))
+    screen.blit(quit_text, (screen_width // 2 - quit_text.get_width() // 2, 350))
+
 def draw_game_over():
     """Draw game over screen"""
     screen.fill("white")
@@ -335,7 +390,7 @@ def draw_game_over():
     
     # Instructions
     restart_text = font.render("Press ENTER to Restart", True, (0, 0, 0))
-    quit_text = font.render("Press ESC to Quit", True, (0, 0, 0))
+    quit_text = font.render("Press ESC to Return to Main Menu", True, (0, 0, 0))
     screen.blit(restart_text, (screen_width // 2 - restart_text.get_width() // 2, 300))
     screen.blit(quit_text, (screen_width // 2 - quit_text.get_width() // 2, 350))
 
@@ -379,8 +434,21 @@ while running:
                         running = False
                 elif event.key == pygame.K_ESCAPE:
                     current_state = GAME_STATES['PLAY']
+
+        elif current_state == GAME_STATES['WIN_GAME']:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:  # Restart the game
+                    reset_game()
+                elif event.key == pygame.K_ESCAPE:  # Return to the main menu
+                    current_state = GAME_STATES['INSTRUCTIONS']
+                    menu_selection = 0  # Reset menu selection to the first item
         
         elif current_state == GAME_STATES['PLAY']:
+                # Check if lives are 0
+            if lives == 0:
+                current_state = GAME_STATES['END_GAME']
+                continue  # Skip the rest of the PLAY logic
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     # Pause the game when ESC is pressed
@@ -389,17 +457,34 @@ while running:
                 
                 if event.key == pygame.K_SPACE:
                     if push_enabled and len(player_path) >= 3:
-                        filled_areas.append(player_path[:])  # Save the path as a polygon
+                        # Find the nearest point on the perimeter to the last point in the player_path
+                        last_point = player_path[-1]
+                        nearest_point = min(perimeter_path, key=lambda p: math.dist(p, last_point))
+                        
+                        # Close the polygon by connecting the last point to the nearest perimeter point
+                        closed_path = player_path + [nearest_point]
+                        
+                        # Add the closed polygon to the filled areas
+                        filled_areas.append(closed_path)
+                    
+                    # Toggle push_enabled
                     push_enabled = not push_enabled
-                    player_path = []  # Reset the path
-        
-        elif current_state == GAME_STATES['END_GAME']:
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RETURN:
-                    reset_game()
-                elif event.key == pygame.K_ESCAPE:
-                    current_state = GAME_STATES['INSTRUCTIONS']
-                    menu_selection = 0  # Reset menu selection to first item
+                    
+                    # Reset the player_path if push is disabled
+                    if push_enabled:
+                        if (xpos == 50 or xpos == screen_width - width - 50 or
+                            ypos == 20 or ypos == screen_height - height - 50):
+                            player_path = [(xpos + width // 2, ypos + height // 2)]
+                    else:
+                        player_path = []
+                    
+                elif current_state == GAME_STATES['END_GAME']:
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_RETURN:  # Restart the game
+                            reset_game()
+                        elif event.key == pygame.K_ESCAPE:  # Return to the main menu
+                            current_state = GAME_STATES['INSTRUCTIONS']
+                            menu_selection = 0  # Reset menu selection to the first item
 
     # State-based rendering
     if current_state == GAME_STATES['INSTRUCTIONS'] or current_state == GAME_STATES['INSTRUCTIONS_DETAIL']:
@@ -409,10 +494,34 @@ while running:
         draw_pause_menu()
     
     elif current_state == GAME_STATES['PLAY']:
-        # Level passed check - return to instructions after showing message
-        if level_passed and time.time() - level_pass_time >= LEVEL_PASS_DURATION:
-            current_state = GAME_STATES['INSTRUCTIONS']
-            continue
+        # Check if lives are 0
+        if lives <= 0:
+            current_state = GAME_STATES['END_GAME']
+            continue  # Skip the rest of the PLAY logic
+
+        # Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Pause the game when ESC is pressed
+                    current_state = GAME_STATES['PAUSE']
+                    pause_menu_selection = 0
+
+                if event.key == pygame.K_SPACE:
+                    if push_enabled and len(player_path) >= 3:
+                        filled_areas.append(player_path[:])  # Save the path as a polygon
+                    push_enabled = not push_enabled
+                    if push_enabled:
+                        # Only start the path if the player is on the perimeter
+                        if (xpos == 50 or xpos == screen_width - width - 50 or
+                            ypos == 20 or ypos == screen_height - height - 50):
+                            player_path = [(xpos + width // 2, ypos + height // 2)]
+                    else:
+                        player_path = []  # Reset the path if not on perimeter
+            
 
         screen.fill("white")
         
@@ -521,7 +630,7 @@ while running:
             if s['y'] < target_y: s['y'] += 5
             elif s['y'] > target_y: s['y'] -= 5
             
-            pygame.draw.circle(screen, "orange", (s['x'], s['y']), 7)
+            pygame.draw.circle(screen, "orange", (s['x'], s['y']), 10)
         
         # Check Sparx collision
         check_sparx_collision()
@@ -537,6 +646,9 @@ while running:
         if qix['y'] <= 20 or qix['y'] >= screen_height - 50:
             qix['dy'] = -qix['dy']
         pygame.draw.circle(screen, "purple", (int(qix['x']), int(qix['y'])), 14)
+
+    elif current_state == GAME_STATES['WIN_GAME']:
+        draw_congrats_screen()
     
     elif current_state == GAME_STATES['END_GAME']:
         draw_game_over()
