@@ -42,11 +42,5 @@ pip install pygame
 - **Spacebar** - Toggle drawing mode
 - **Esc** - Exit game
 
-## Future Enhancements
-- Additional power-ups
-- Different enemy AI behavior
-- Sound effects and music
 
-## License
-This project is open-source and available under the MIT License.
 
